@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 """
-日本株スクリーナー - 勝率統計自動記録版 - 206銘柄
-買いシグナル: SMA10>SMA20>SMA75 + RSI40-55反発 + MACDゴールデンクロス
-売りシグナル: SMA10<SMA20<SMA75 + RSI60-50下げ + MACDデッドクロス
-勝率統計を自動記録・更新
+日本株スクリーナー - 勝率統計自動記録版 - GitHub Actions 対応
 """
 
 import yfinance as yf
@@ -15,17 +12,18 @@ from google.oauth2.service_account import Credentials
 import json
 import traceback
 import sys
+import os
 
-SERVICE_ACCOUNT_FILE = 'trading-493802-dc7fdcabd29e.json'
-SPREADSHEET_ID = '13VGvzxKR8nNRm29NjlM2Nj-vA7D9yateXFm_szUJGW8'
+# GitHub Secrets から認証情報を取得
+GCP_CREDENTIALS = os.getenv('GCP_CREDENTIALS')
+SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
 
 print("=" * 80)
 print("日本株スクリーナー - 勝率統計自動記録版 - 206銘柄 - 開始")
 print("=" * 80)
 
 try:
-    with open(SERVICE_ACCOUNT_FILE) as f:
-        creds_dict = json.load(f)
+    creds_dict = json.loads(GCP_CREDENTIALS)
     
     creds = Credentials.from_service_account_info(creds_dict, scopes=[
         'https://www.googleapis.com/auth/spreadsheets',
@@ -36,7 +34,6 @@ try:
 except Exception as e:
     print(f"❌ 認証エラー: {e}")
     traceback.print_exc()
-    input("\nEnterキーを押して終了...")
     sys.exit(1)
 
 STOCKS = [
@@ -127,11 +124,9 @@ def detect_signal(df):
     return signals if signals else None
 
 def update_signal_history(sheet, buy_signals, sell_signals):
-    """シグナル履歴を追加"""
     try:
         ws = sheet.worksheet("シグナル履歴")
     except:
-        # シート未作成なら作成
         ws = sheet.add_worksheet(title="シグナル履歴", rows=1000, cols=10)
         ws.append_row(['日付', '銘柄', 'シグナル', 'エントリー価格', '条件', 'SMA10', 'SMA20', 'SMA75', 'RSI', 'MACD'])
     
@@ -152,7 +147,6 @@ def update_signal_history(sheet, buy_signals, sell_signals):
         ])
 
 def evaluate_past_signals(sheet):
-    """過去のシグナルを評価し、勝率統計を更新"""
     try:
         hist_ws = sheet.worksheet("シグナル履歴")
         records = hist_ws.get_all_records()
@@ -162,14 +156,13 @@ def evaluate_past_signals(sheet):
     if not records:
         return
     
-    # 過去 5 日間のシグナルを評価
     five_days_ago = datetime.now() - timedelta(days=5)
     
     win_count = 0
     lose_count = 0
     total_profit_rate = 0
     
-    for record in records[-50:]:  # 直近 50 件を評価
+    for record in records[-50:]:
         try:
             signal_date = datetime.strptime(record['日付'], '%Y-%m-%d')
             if signal_date < five_days_ago:
@@ -179,7 +172,6 @@ def evaluate_past_signals(sheet):
             entry_price = float(record['エントリー価格'])
             signal_type = record['シグナル']
             
-            # 現在価格を取得
             ticker_obj = yf.Ticker(ticker)
             df = ticker_obj.history(period='5d')
             
@@ -189,7 +181,6 @@ def evaluate_past_signals(sheet):
             current_price = float(df['Close'].iloc[-1])
             profit_rate = ((current_price - entry_price) / entry_price) * 100
             
-            # 買いシグナルの場合
             if signal_type == 'BUY':
                 if profit_rate > 0:
                     win_count += 1
@@ -197,7 +188,6 @@ def evaluate_past_signals(sheet):
                     lose_count += 1
                 total_profit_rate += profit_rate
             
-            # 売りシグナルの場合
             elif signal_type == 'SELL':
                 if profit_rate < 0:
                     win_count += 1
@@ -208,7 +198,6 @@ def evaluate_past_signals(sheet):
         except:
             continue
     
-    # 勝率統計を更新
     try:
         stat_ws = sheet.worksheet("勝率統計")
     except:
@@ -263,7 +252,6 @@ def main():
         sheet = gc.open_by_key(SPREADSHEET_ID)
         print(f"✅ スプレッドシート取得成功")
         
-        # 本日のシグナルを更新
         ws = sheet.worksheet("本日のシグナル")
         ws.clear()
         ws.append_row(['日付', '銘柄', 'シグナル', '条件', 'エントリー価格', 'SMA10', 'SMA20', 'SMA75', 'RSI', 'MACD'])
@@ -284,11 +272,9 @@ def main():
         
         print(f"✅ 本日のシグナルに書き込み完了")
         
-        # シグナル履歴に追加
         update_signal_history(sheet, buy_signals, sell_signals)
         print(f"✅ シグナル履歴に追加完了")
         
-        # 過去のシグナルを評価して勝率統計を更新
         evaluate_past_signals(sheet)
         print(f"✅ 勝率統計を更新完了")
         
@@ -298,9 +284,9 @@ def main():
     except Exception as e:
         print(f"❌ エラー: {e}")
         traceback.print_exc()
-    
-    print("\n" + "=" * 80)
-    input("Enterキーを押して終了...")
+
+if __name__ == '__main__':
+    main()
 
 if __name__ == '__main__':
     main()
