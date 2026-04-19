@@ -28,6 +28,7 @@ gc = gspread.authorize(creds)
 STOCKS = ['7011.T', '6502.T', '6758.T', '8035.T', '9984.T', '9020.T', '4502.T', '5401.T', '1605.T', '2914.T']
 
 def calculate_rsi(prices, period=14):
+    """RSI を計算"""
     delta = prices.diff()
     gain = delta.where(delta > 0, 0).rolling(window=period).mean()
     loss = -delta.where(delta < 0, 0).rolling(window=period).mean()
@@ -35,6 +36,7 @@ def calculate_rsi(prices, period=14):
     return 100 - (100 / (1 + rs))
 
 def detect_signal(df):
+    """シグナル検出"""
     if len(df) < 30:
         return None
     
